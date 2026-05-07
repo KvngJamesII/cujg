@@ -1,0 +1,1880 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Redon3 API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: bots
+    description: Bot management
+  - name: billing
+    description: Billing and subscriptions
+  - name: notifications
+    description: Notifications
+  - name: dashboard
+    description: Dashboard summary
+  - name: admin
+    description: Admin operations
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── AUTH ──────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Log in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Log out
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Refresh access token
+      responses:
+        "200":
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid refresh token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/verify-email:
+    post:
+      operationId: verifyEmail
+      tags: [auth]
+      summary: Verify email with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyEmailRequest"
+      responses:
+        "200":
+          description: Email verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/resend-verification:
+    post:
+      operationId: resendVerification
+      tags: [auth]
+      summary: Resend verification email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResendVerificationRequest"
+      responses:
+        "200":
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/forgot-password:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      summary: Request password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+      responses:
+        "200":
+          description: Reset email sent (always returns 200 for security)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Reset password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+      responses:
+        "200":
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Invalid or expired token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/2fa/setup:
+    post:
+      operationId: setup2fa
+      tags: [auth]
+      summary: Set up 2FA
+      responses:
+        "200":
+          description: TOTP secret and QR code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TwoFaSetupResponse"
+
+  /auth/2fa/verify:
+    post:
+      operationId: verify2fa
+      tags: [auth]
+      summary: Verify 2FA code (enable or login)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TwoFaVerifyRequest"
+      responses:
+        "200":
+          description: Verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/2fa/disable:
+    post:
+      operationId: disable2fa
+      tags: [auth]
+      summary: Disable 2FA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TwoFaVerifyRequest"
+      responses:
+        "200":
+          description: 2FA disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /account/profile:
+    patch:
+      operationId: updateProfile
+      tags: [auth]
+      summary: Update user profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProfileRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  # ── DASHBOARD ─────────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  # ── BOTS ──────────────────────────────────────────────────────────────────
+  /bots:
+    get:
+      operationId: getBots
+      tags: [bots]
+      summary: List user bots
+      responses:
+        "200":
+          description: Bot list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Bot"
+    post:
+      operationId: createBot
+      tags: [bots]
+      summary: Create a new bot slot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBotRequest"
+      responses:
+        "201":
+          description: Bot created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bot"
+        "400":
+          description: Validation error or bot limit reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bots/{id}:
+    get:
+      operationId: getBot
+      tags: [bots]
+      summary: Get bot by ID
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Bot detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bot"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateBot
+      tags: [bots]
+      summary: Update bot settings
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBotRequest"
+      responses:
+        "200":
+          description: Bot updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bot"
+    delete:
+      operationId: deleteBot
+      tags: [bots]
+      summary: Delete bot
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Bot deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /bots/{id}/start:
+    post:
+      operationId: startBot
+      tags: [bots]
+      summary: Start bot container
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Bot started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /bots/{id}/stop:
+    post:
+      operationId: stopBot
+      tags: [bots]
+      summary: Stop bot container
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Bot stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /bots/{id}/restart:
+    post:
+      operationId: restartBot
+      tags: [bots]
+      summary: Restart bot container
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Bot restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /bots/{id}/upload:
+    post:
+      operationId: uploadBotFiles
+      tags: [bots]
+      summary: Upload bot zip file
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Upload accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /bots/{id}/deploy-status:
+    get:
+      operationId: getDeployStatus
+      tags: [bots]
+      summary: Poll deploy status
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Deploy status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployStatus"
+
+  /bots/{id}/stats:
+    get:
+      operationId: getBotStats
+      tags: [bots]
+      summary: Get bot resource stats
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Bot stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BotStats"
+
+  /bots/{id}/env:
+    get:
+      operationId: getBotEnv
+      tags: [bots]
+      summary: List bot env variables
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      responses:
+        "200":
+          description: Env variables (values masked)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnvVar"
+    post:
+      operationId: createEnvVar
+      tags: [bots]
+      summary: Create env variable
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEnvVarRequest"
+      responses:
+        "201":
+          description: Env variable created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvVar"
+
+  /bots/{id}/env/{varId}:
+    patch:
+      operationId: updateEnvVar
+      tags: [bots]
+      summary: Update env variable
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+        - name: varId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEnvVarRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvVar"
+    delete:
+      operationId: deleteEnvVar
+      tags: [bots]
+      summary: Delete env variable
+      parameters:
+        - $ref: "#/components/parameters/BotId"
+        - name: varId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ── BILLING ───────────────────────────────────────────────────────────────
+  /billing/plans:
+    get:
+      operationId: getPlans
+      tags: [billing]
+      summary: List available plans
+      responses:
+        "200":
+          description: Plans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Plan"
+
+  /billing/subscription:
+    get:
+      operationId: getSubscription
+      tags: [billing]
+      summary: Get current subscription
+      responses:
+        "200":
+          description: Current subscription
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+
+  /billing/checkout:
+    post:
+      operationId: initiateCheckout
+      tags: [billing]
+      summary: Initiate Paystack checkout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutRequest"
+      responses:
+        "200":
+          description: Checkout URL or free plan activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResponse"
+
+  /billing/coupon/validate:
+    post:
+      operationId: validateCoupon
+      tags: [billing]
+      summary: Validate a coupon code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateCouponRequest"
+      responses:
+        "200":
+          description: Coupon result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CouponResult"
+
+  /billing/payments:
+    get:
+      operationId: getPayments
+      tags: [billing]
+      summary: Get payment history
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Payment history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentListResponse"
+
+  /billing/webhook/paystack:
+    post:
+      operationId: paystackWebhook
+      tags: [billing]
+      summary: Paystack webhook receiver
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaystackWebhookPayload"
+      responses:
+        "200":
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ── NOTIFICATIONS ─────────────────────────────────────────────────────────
+  /notifications:
+    get:
+      operationId: getNotifications
+      tags: [notifications]
+      summary: Get user notifications
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Notification"
+
+  /notifications/read-all:
+    patch:
+      operationId: markAllNotificationsRead
+      tags: [notifications]
+      summary: Mark all notifications as read
+      responses:
+        "200":
+          description: All read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /notifications/{id}/read:
+    patch:
+      operationId: markNotificationRead
+      tags: [notifications]
+      summary: Mark a notification as read
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notification read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ── ADMIN ─────────────────────────────────────────────────────────────────
+  /admin/stats:
+    get:
+      operationId: getAdminStats
+      tags: [admin]
+      summary: Get admin dashboard stats
+      responses:
+        "200":
+          description: Admin stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStats"
+
+  /admin/vps-stats:
+    get:
+      operationId: getVpsStats
+      tags: [admin]
+      summary: Get VPS resource stats
+      responses:
+        "200":
+          description: VPS stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VpsStats"
+
+  /admin/users:
+    get:
+      operationId: adminGetUsers
+      tags: [admin]
+      summary: List all users
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: plan
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUserListResponse"
+
+  /admin/users/{id}:
+    get:
+      operationId: adminGetUser
+      tags: [admin]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+    patch:
+      operationId: adminUpdateUser
+      tags: [admin]
+      summary: Update user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUser"
+
+  /admin/users/{id}/suspend:
+    post:
+      operationId: adminSuspendUser
+      tags: [admin]
+      summary: Suspend user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User suspended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/users/{id}/ban:
+    post:
+      operationId: adminBanUser
+      tags: [admin]
+      summary: Ban user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User banned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/users/{id}/extend-plan:
+    post:
+      operationId: adminExtendPlan
+      tags: [admin]
+      summary: Extend user plan
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtendPlanRequest"
+      responses:
+        "200":
+          description: Plan extended
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/containers:
+    get:
+      operationId: adminGetContainers
+      tags: [admin]
+      summary: List all containers
+      responses:
+        "200":
+          description: Container list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminContainer"
+
+  /admin/containers/{id}/force-stop:
+    post:
+      operationId: adminForceStopContainer
+      tags: [admin]
+      summary: Force stop a container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Container stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/containers/{id}/force-restart:
+    post:
+      operationId: adminForceRestartContainer
+      tags: [admin]
+      summary: Force restart a container
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Container restarted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/coupons:
+    get:
+      operationId: adminGetCoupons
+      tags: [admin]
+      summary: List coupons
+      responses:
+        "200":
+          description: Coupon list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Coupon"
+    post:
+      operationId: adminCreateCoupon
+      tags: [admin]
+      summary: Create coupon
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCouponRequest"
+      responses:
+        "201":
+          description: Coupon created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupon"
+
+  /admin/coupons/{id}:
+    patch:
+      operationId: adminUpdateCoupon
+      tags: [admin]
+      summary: Update coupon
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCouponRequest"
+      responses:
+        "200":
+          description: Coupon updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Coupon"
+    delete:
+      operationId: adminDeleteCoupon
+      tags: [admin]
+      summary: Delete coupon
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Coupon deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/trial-codes:
+    get:
+      operationId: adminGetTrialCodes
+      tags: [admin]
+      summary: List trial codes
+      responses:
+        "200":
+          description: Trial code list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TrialCode"
+    post:
+      operationId: adminCreateTrialCode
+      tags: [admin]
+      summary: Create trial code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTrialCodeRequest"
+      responses:
+        "201":
+          description: Trial code created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrialCode"
+
+  /admin/payments:
+    get:
+      operationId: adminGetPayments
+      tags: [admin]
+      summary: Get all payments
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: dateFrom
+          in: query
+          schema:
+            type: string
+        - name: dateTo
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentListResponse"
+
+  /admin/broadcast/email:
+    post:
+      operationId: adminBroadcastEmail
+      tags: [admin]
+      summary: Send broadcast email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastEmailRequest"
+      responses:
+        "200":
+          description: Email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/broadcast/notification:
+    post:
+      operationId: adminBroadcastNotification
+      tags: [admin]
+      summary: Send broadcast site notification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BroadcastNotificationRequest"
+      responses:
+        "200":
+          description: Notification sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /admin/audit-log:
+    get:
+      operationId: adminGetAuditLog
+      tags: [admin]
+      summary: Get audit log
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: userId
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogResponse"
+
+components:
+  parameters:
+    BotId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    MessageResponse:
+      type: object
+      properties:
+        message:
+          type: string
+      required: [message]
+
+    # ── AUTH SCHEMAS ──────────────────────────────────────────────────────
+    RegisterRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        trialCode:
+          type: ["string", "null"]
+      required: [fullName, email, password]
+
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+      required: [email, password]
+
+    VerifyEmailRequest:
+      type: object
+      properties:
+        token:
+          type: string
+      required: [token]
+
+    ResendVerificationRequest:
+      type: object
+      properties:
+        email:
+          type: string
+      required: [email]
+
+    ForgotPasswordRequest:
+      type: object
+      properties:
+        email:
+          type: string
+      required: [email]
+
+    ResetPasswordRequest:
+      type: object
+      properties:
+        token:
+          type: string
+        password:
+          type: string
+      required: [token, password]
+
+    TwoFaSetupResponse:
+      type: object
+      properties:
+        secret:
+          type: string
+        qrCodeUrl:
+          type: string
+        backupCodes:
+          type: array
+          items:
+            type: string
+      required: [secret, qrCodeUrl, backupCodes]
+
+    TwoFaVerifyRequest:
+      type: object
+      properties:
+        code:
+          type: string
+      required: [code]
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        hasCompletedOnboarding:
+          type: boolean
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+          enum: [user, admin]
+        status:
+          type: string
+          enum: [active, suspended, banned]
+        emailVerified:
+          type: boolean
+        totpEnabled:
+          type: boolean
+        hasCompletedOnboarding:
+          type: boolean
+        plan:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, email, fullName, role, status, emailVerified, totpEnabled, hasCompletedOnboarding, createdAt]
+
+    AuthResponse:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        accessToken:
+          type: string
+        requiresTwoFa:
+          type: boolean
+      required: [user, accessToken, requiresTwoFa]
+
+    # ── DASHBOARD ─────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      properties:
+        totalBots:
+          type: integer
+        runningBots:
+          type: integer
+        stoppedBots:
+          type: integer
+        crashedBots:
+          type: integer
+        plan:
+          type: ["string", "null"]
+        botLimit:
+          type: integer
+        expiryDate:
+          type: ["string", "null"]
+        daysUntilExpiry:
+          type: ["integer", "null"]
+      required: [totalBots, runningBots, stoppedBots, crashedBots, botLimit]
+
+    # ── BOT SCHEMAS ───────────────────────────────────────────────────────
+    Bot:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        name:
+          type: string
+        runtime:
+          type: ["string", "null"]
+          enum: [nodejs, python, null]
+        startFile:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [running, stopped, crashed, suspended, setting_up, not_created]
+        memoryUsedMb:
+          type: number
+        memoryLimitMb:
+          type: number
+        cpuPercent:
+          type: number
+        uptimeSeconds:
+          type: number
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, userId, name, status, memoryUsedMb, memoryLimitMb, cpuPercent, uptimeSeconds, createdAt, updatedAt]
+
+    CreateBotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+      required: [name]
+
+    UpdateBotRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        startFile:
+          type: string
+
+    UploadResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        detectedRuntime:
+          type: ["string", "null"]
+        detectedStartFile:
+          type: ["string", "null"]
+        validationResults:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationItem"
+      required: [message, validationResults]
+
+    ValidationItem:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, warning, error]
+        text:
+          type: string
+      required: [status, text]
+
+    DeployStatus:
+      type: object
+      properties:
+        stage:
+          type: string
+          enum: [upload, install, container, start, complete, failed]
+        queuePosition:
+          type: ["integer", "null"]
+        error:
+          type: ["string", "null"]
+      required: [stage]
+
+    BotStats:
+      type: object
+      properties:
+        cpuPercent:
+          type: number
+        memoryUsedMb:
+          type: number
+        memoryLimitMb:
+          type: number
+        networkOutBytes:
+          type: integer
+        networkInBytes:
+          type: integer
+        uptimeSeconds:
+          type: number
+        recordedAt:
+          type: string
+      required: [cpuPercent, memoryUsedMb, memoryLimitMb, networkOutBytes, networkInBytes, uptimeSeconds, recordedAt]
+
+    EnvVar:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        value:
+          type: string
+        createdAt:
+          type: string
+      required: [id, key, value, createdAt]
+
+    CreateEnvVarRequest:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+      required: [key, value]
+
+    UpdateEnvVarRequest:
+      type: object
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+
+    # ── BILLING SCHEMAS ───────────────────────────────────────────────────
+    Plan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        priceKobo:
+          type: integer
+        botLimit:
+          type: integer
+        ramPerBotMb:
+          type: integer
+        cpuPerBot:
+          type: number
+        storageGb:
+          type: integer
+        features:
+          type: object
+      required: [id, name, priceKobo, botLimit, ramPerBotMb, cpuPerBot, storageGb, features]
+
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: string
+        planId:
+          type: string
+        planName:
+          type: string
+        priceKobo:
+          type: integer
+        status:
+          type: string
+          enum: [active, grace, suspended, expired, cancelled]
+        startDate:
+          type: string
+        expiryDate:
+          type: string
+        graceEndDate:
+          type: ["string", "null"]
+      required: [id, planId, planName, priceKobo, status, startDate, expiryDate]
+
+    CheckoutRequest:
+      type: object
+      properties:
+        planId:
+          type: string
+        couponCode:
+          type: ["string", "null"]
+        callbackUrl:
+          type: string
+      required: [planId, callbackUrl]
+
+    CheckoutResponse:
+      type: object
+      properties:
+        checkoutUrl:
+          type: ["string", "null"]
+        free:
+          type: boolean
+        message:
+          type: string
+      required: [free, message]
+
+    ValidateCouponRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        planId:
+          type: string
+      required: [code, planId]
+
+    CouponResult:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        discountPercent:
+          type: number
+        originalPriceKobo:
+          type: integer
+        finalPriceKobo:
+          type: integer
+        isFree:
+          type: boolean
+        error:
+          type: ["string", "null"]
+      required: [valid, discountPercent, originalPriceKobo, finalPriceKobo, isFree]
+
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+        planName:
+          type: string
+        amountKobo:
+          type: integer
+        status:
+          type: string
+          enum: [pending, confirmed, failed]
+        type:
+          type: string
+          enum: [new, renewal, upgrade, coupon_free]
+        paystackReference:
+          type: ["string", "null"]
+        paidAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, planName, amountKobo, status, type, createdAt]
+
+    PaymentListResponse:
+      type: object
+      properties:
+        payments:
+          type: array
+          items:
+            $ref: "#/components/schemas/Payment"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [payments, total, page, limit]
+
+    # ── NOTIFICATION SCHEMAS ──────────────────────────────────────────────
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum: [info, warning, critical]
+        message:
+          type: string
+        read:
+          type: boolean
+        createdAt:
+          type: string
+      required: [id, type, message, read, createdAt]
+
+    # ── ADMIN SCHEMAS ─────────────────────────────────────────────────────
+    AdminStats:
+      type: object
+      properties:
+        totalUsers:
+          type: integer
+        activeSubscriptions:
+          type: integer
+        runningContainers:
+          type: integer
+        planBreakdown:
+          type: object
+          properties:
+            free_trial:
+              type: integer
+            starter:
+              type: integer
+            developer:
+              type: integer
+            pro:
+              type: integer
+          required: [free_trial, starter, developer, pro]
+      required: [totalUsers, activeSubscriptions, runningContainers, planBreakdown]
+
+    VpsStats:
+      type: object
+      properties:
+        ramUsedPercent:
+          type: number
+        cpuUsedPercent:
+          type: number
+        diskUsedPercent:
+          type: number
+        uptime:
+          type: number
+      required: [ramUsedPercent, cpuUsedPercent, diskUsedPercent, uptime]
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        fullName:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        plan:
+          type: ["string", "null"]
+        botCount:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, email, fullName, role, status, botCount, createdAt]
+
+    AdminUserListResponse:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminUser"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [users, total, page, limit]
+
+    AdminUpdateUserRequest:
+      type: object
+      properties:
+        status:
+          type: string
+        role:
+          type: string
+
+    ExtendPlanRequest:
+      type: object
+      properties:
+        planId:
+          type: string
+        days:
+          type: integer
+      required: [planId, days]
+
+    AdminContainer:
+      type: object
+      properties:
+        botId:
+          type: string
+        botName:
+          type: string
+        userEmail:
+          type: string
+        status:
+          type: string
+        cpuPercent:
+          type: number
+        memoryUsedMb:
+          type: number
+        uptimeSeconds:
+          type: number
+      required: [botId, botName, userEmail, status, cpuPercent, memoryUsedMb, uptimeSeconds]
+
+    Coupon:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        discountPercent:
+          type: number
+        applicablePlans:
+          type: array
+          items:
+            type: string
+        maxUses:
+          type: integer
+        usesCount:
+          type: integer
+        expiresAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, code, discountPercent, applicablePlans, maxUses, usesCount, createdAt]
+
+    CreateCouponRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        discountPercent:
+          type: number
+        applicablePlans:
+          type: array
+          items:
+            type: string
+        maxUses:
+          type: integer
+        expiresAt:
+          type: ["string", "null"]
+      required: [code, discountPercent, applicablePlans, maxUses]
+
+    TrialCode:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        durationDays:
+          type: integer
+        maxAccounts:
+          type: integer
+        accountsUsed:
+          type: integer
+        codeExpiresAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, code, durationDays, maxAccounts, accountsUsed, createdAt]
+
+    CreateTrialCodeRequest:
+      type: object
+      properties:
+        code:
+          type: string
+        durationDays:
+          type: integer
+        maxAccounts:
+          type: integer
+        codeExpiresAt:
+          type: ["string", "null"]
+      required: [code, durationDays, maxAccounts]
+
+    BroadcastEmailRequest:
+      type: object
+      properties:
+        target:
+          type: string
+          enum: [all, paid, trial, starter, developer, pro]
+        subject:
+          type: string
+        body:
+          type: string
+      required: [target, subject, body]
+
+    BroadcastNotificationRequest:
+      type: object
+      properties:
+        message:
+          type: string
+        type:
+          type: string
+          enum: [info, warning, critical]
+        target:
+          type: string
+          enum: [all, paid, trial]
+      required: [message, type, target]
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        userId:
+          type: ["string", "null"]
+        userEmail:
+          type: ["string", "null"]
+        action:
+          type: string
+        ipAddress:
+          type: ["string", "null"]
+        metadata:
+          type: object
+        createdAt:
+          type: string
+      required: [id, action, createdAt]
+
+    PaystackWebhookPayload:
+      type: object
+      properties:
+        event:
+          type: string
+        data:
+          type: object
+      required: [event]
+
+    AuditLogResponse:
+      type: object
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+      required: [entries, total, page, limit]

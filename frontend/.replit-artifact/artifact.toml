@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Redon3"
+version = "1.0.0"
+id = "artifacts/redon3"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19714
+
+[services.development]
+run = "pnpm --filter @workspace/redon3 run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/redon3", "run", "build" ]
+publicDir = "artifacts/redon3/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19714"
+BASE_PATH = "/"

@@ -1,0 +1,28 @@
+[Unit]
+Description=Redon3 API Server
+After=network.target postgresql.service docker.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=redon3
+Group=redon3
+WorkingDirectory=/opt/redon3/api
+ExecStart=/usr/bin/node --enable-source-maps dist/index.mjs
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/redon3/logs/api-out.log
+StandardError=append:/opt/redon3/logs/api-err.log
+
+# Environment — edit /opt/redon3/.env directly
+EnvironmentFile=/opt/redon3/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target
