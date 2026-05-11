@@ -1,173 +1,152 @@
-import React, { useState } from "react";
-import { Link, useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
-import { useToast } from "@/hooks/use-toast";
-import { Logo } from "@/components/ui/Logo";
-import { ChevronLeft, Check, Tag, Lock, ShieldCheck } from "lucide-react";
-import api from "@/lib/api";
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'wouter';
+import { motion } from 'framer-motion';
+import { Check, Lock, ArrowRight, Loader2, Shield, Tag } from 'lucide-react';
+import api from '@/lib/api';
+import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 
-const B   = "rgba(255,255,255,0.08)";
-const S   = "rgba(255,255,255,0.04)";
-const DIM = "rgba(255,255,255,0.5)";
-const MUT = "rgba(255,255,255,0.25)";
-const BL  = "#3b82f6";
-const GR  = "#22c55e";
+interface Plan { id: string; name: string; priceKobo: number; botLimit: number; ramPerBotMb: number; cpuPerBot: number }
 
-function fmtN(kobo: number): string {
-  return "₦" + (kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 0 });
-}
+export default function CheckoutPage() {
+  const { user, refreshUser } = useAuth();
+  const [, setLoc] = useLocation();
+  const [plans, setPlans] = useState<Plan[]>([]);
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [coupon, setCoupon] = useState('');
+  const [discount, setDiscount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [couponLoading, setCouponLoading] = useState(false);
 
-const CheckoutPage: React.FC = () => {
-  const [search] = useLocation();
-  const params = new URLSearchParams(typeof search === "string" ? search.split("?")[1] ?? "" : "");
-  const planName = params.get("plan") ?? "Basic";
-  const planPrice = parseInt(params.get("price") ?? "1400", 10);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const planId = params.get('plan') ?? 'developer';
+    api.get('/billing/plans').then((r) => {
+      const list = r.data as Plan[];
+      setPlans(list);
+      setSelectedId(planId);
+    });
+    if (!user) setLoc('/login');
+  }, [user, setLoc]);
 
-  const [coupon, setCoupon] = useState("");
-  const [couponResult, setCouponResult] = useState<{ valid: boolean; discountPct: number; msg: string } | null>(null);
-  const [applying, setApplying] = useState(false);
-  const { success: ok, error: err } = useToast();
-
-  const basePrice = planPrice * 100; // Convert to kobo
-  let finalPrice = basePrice;
-
-  // Coupon on top
-  let couponSaving = 0;
-  if (couponResult?.valid) {
-    couponSaving = Math.floor(finalPrice * couponResult.discountPct / 100);
-    finalPrice = Math.max(0, finalPrice - couponSaving);
-  }
-
-  const isFree = finalPrice === 0;
+  const selected = plans.find((p) => p.id === selectedId);
+  const total = selected ? Math.max(0, selected.priceKobo - Math.round(selected.priceKobo * discount / 100)) : 0;
 
   const applyCoupon = async () => {
-    if (!coupon.trim()) return;
-    setApplying(true);
-    try {
-      const r = await api.post("/billing/coupon/validate", { code: coupon.toUpperCase(), planId: planName });
-      const d = r.data as { valid: boolean; discountPercent: number; error: string | null };
-      if (d.valid) setCouponResult({ valid: true, discountPct: d.discountPercent, msg: `${d.discountPercent}% off applied!` });
-      else setCouponResult({ valid: false, discountPct: 0, msg: d.error ?? "Invalid code" });
-    } catch { setCouponResult({ valid: false, discountPct: 0, msg: "Could not validate coupon" }); }
-    setApplying(false);
+    if (!coupon) return;
+    setCouponLoading(true);
+    try { const r = await api.post('/billing/coupon/validate', { code: coupon }); setDiscount((r.data as { discount: number }).discount); toast.success(`${(r.data as { discount: number }).discount}% off applied`); }
+    catch { toast.error('Invalid coupon'); setDiscount(0); }
+    finally { setCouponLoading(false); }
   };
 
-  const checkout = useMutation({
-    mutationFn: async () => {
-      const r = await api.post("/billing/checkout", {
-        planId: planName,
-        couponCode: couponResult?.valid ? coupon : undefined,
-        callbackUrl: window.location.origin + "/dashboard",
-      });
-      return r.data as { checkoutUrl: string | null; free: boolean; message: string };
-    },
-    onSuccess: (d) => {
-      if (d.free) { ok("Activated!", d.message); setTimeout(() => window.location.href = "/dashboard", 1200); }
-      else if (d.checkoutUrl) window.location.href = d.checkoutUrl;
-      else err("Error", d.message ?? "Payment not configured");
-    },
-    onError: () => err("Failed", "Please try again"),
-  });
+  const checkout = async () => {
+    setLoading(true);
+    try {
+      await api.post('/billing/checkout', { planId: selectedId, couponCode: coupon || null, callbackUrl: '/dashboard' });
+      await refreshUser();
+      toast.success('Plan activated');
+      setLoc('/dashboard');
+    } catch { toast.error('Checkout failed'); }
+    finally { setLoading(false); }
+  };
+
+  if (!selected) return <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-primary)", color: "var(--text-primary)" }}>
-      {/* Nav */}
-      <nav className="h-16 border-b flex items-center justify-between px-4 md:px-8 sticky top-0 z-50 backdrop-blur-md"
-        style={{ borderColor: B, background: "rgba(8,9,13,0.8)" }}>
-        <Logo />
-        <Link href="/pricing">
-          <button className="flex items-center gap-1.5 text-xs font-bold" style={{ color: DIM }}>
-            <ChevronLeft size={14} /> Back
-          </button>
-        </Link>
-      </nav>
+    <div className="min-h-screen text-[--text-primary] p-4 md:p-10" style={{ background: 'var(--bg-primary)' }}>
+      <div className="max-w-4xl mx-auto">
+        <button onClick={() => setLoc('/pricing')} className="text-xs text-[--text-muted] hover:text-white mb-6">← Back to pricing</button>
+        <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight">Complete your purchase</h1>
+        <p className="text-[--text-secondary] mt-2 text-sm">You're seconds away from never thinking about uptime again.</p>
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-4 py-8 flex flex-col gap-5">
-        <div>
-          <h1 className="text-2xl font-black text-white">Checkout</h1>
-          <p className="text-sm mt-0.5" style={{ color: DIM }}>One panel, one subscription. Renews monthly.</p>
-        </div>
-
-        {/* Order summary */}
-        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${B}` }}>
-          <div className="px-4 py-3 border-b" style={{ borderColor: B, background: S }}>
-            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: MUT }}>Order Summary</p>
+        <div className="grid grid-cols-1 md:grid-cols-[1fr,420px] gap-6 mt-8">
+          {/* Plan picker */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-[--text-muted]">Choose your plan</h2>
+            {plans.map((p) => (
+              <motion.button whileTap={{ scale: 0.99 }} key={p.id} onClick={() => setSelectedId(p.id)}
+                className="w-full text-left p-5 rounded-xl border transition-all"
+                style={{
+                  background: selectedId === p.id ? 'rgba(249,115,22,0.06)' : 'var(--bg-secondary)',
+                  borderColor: selectedId === p.id ? 'var(--accent-primary)' : 'var(--border)',
+                }}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-extrabold text-lg">{p.name}</div>
+                    <div className="text-xs text-[--text-muted] mt-1">{p.botLimit} panel{p.botLimit > 1 ? 's' : ''} · {p.ramPerBotMb >= 1024 ? p.ramPerBotMb / 1024 + ' GB' : p.ramPerBotMb + ' MB'} RAM · {p.cpuPerBot} vCPU</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xl font-extrabold" style={{ color: selectedId === p.id ? 'var(--accent-primary)' : 'white' }}>₦{(p.priceKobo / 100).toLocaleString()}</div>
+                    <div className="text-[11px] text-[--text-muted]">/month</div>
+                  </div>
+                  <div className={`w-5 h-5 rounded-full border-2 ml-3 flex items-center justify-center ${selectedId === p.id ? 'border-[--accent-primary]' : 'border-[--border-strong]'}`}>
+                    {selectedId === p.id && <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--accent-primary)' }} />}
+                  </div>
+                </div>
+              </motion.button>
+            ))}
           </div>
 
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="text-base font-black text-white">{planName.charAt(0).toUpperCase() + planName.slice(1)} Panel</p>
-                <p className="text-xs mt-1" style={{ color: MUT }}>Monthly subscription · renews on same date</p>
+          {/* Summary */}
+          <div className="space-y-4">
+            <div className="p-5 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
+              <h3 className="text-sm font-bold uppercase tracking-wider text-[--text-muted] mb-4">Order summary</h3>
+              <div className="flex justify-between text-sm mb-2">
+                <span>{selected.name} plan</span>
+                <span>₦{(selected.priceKobo / 100).toLocaleString()}</span>
               </div>
-              <div className="text-right ml-4 shrink-0">
-                <p className="text-2xl font-black text-white">{fmtN(basePrice)}</p>
-                <p className="text-xs" style={{ color: MUT }}>/mo</p>
-              </div>
-            </div>
-
-            {/* Price breakdown */}
-            <div className="border-t pt-4 flex flex-col gap-2" style={{ borderColor: B }}>
-              {couponSaving > 0 && (
-                <div className="flex items-center justify-between text-xs">
-                  <span style={{ color: DIM }}>Coupon ({couponResult?.discountPct}%)</span>
-                  <span style={{ color: GR }}>−{fmtN(couponSaving)}</span>
+              {discount > 0 && (
+                <div className="flex justify-between text-sm mb-2" style={{ color: 'var(--success)' }}>
+                  <span>Coupon ({discount}% off)</span>
+                  <span>−₦{Math.round(selected.priceKobo * discount / 100 / 100).toLocaleString()}</span>
                 </div>
               )}
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-sm font-bold text-white">Total</span>
-                <span className="text-xl font-black" style={{ color: BL }}>{fmtN(finalPrice)}<span className="text-xs font-normal" style={{ color: MUT }}>/mo</span></span>
+              <div className="border-t my-3" style={{ borderColor: 'var(--border)' }} />
+              <div className="flex justify-between text-base font-extrabold mb-4">
+                <span>Total</span>
+                <span style={{ color: 'var(--accent-primary)' }}>₦{(total / 100).toLocaleString()}</span>
+              </div>
+
+              {/* Coupon */}
+              <div className="flex gap-2 mb-4">
+                <div className="flex-1 flex items-center rounded-lg border px-3" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border)' }}>
+                  <Tag size={13} className="text-[--text-muted]" />
+                  <input value={coupon} onChange={(e) => setCoupon(e.target.value.toUpperCase())} placeholder="Coupon code"
+                    className="bg-transparent w-full text-sm px-2 py-2.5 outline-none placeholder:text-[--text-muted]" />
+                </div>
+                <button onClick={applyCoupon} disabled={!coupon || couponLoading}
+                  className="px-4 rounded-lg text-xs font-bold border hover:bg-white/5"
+                  style={{ borderColor: 'var(--border)' }}>
+                  {couponLoading ? <Loader2 className="animate-spin" size={13} /> : 'Apply'}
+                </button>
+              </div>
+
+              <button onClick={checkout} disabled={loading}
+                className="w-full h-12 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2"
+                style={{ background: 'var(--accent-gradient)', boxShadow: 'var(--shadow-glow-orange)' }}>
+                {loading ? <Loader2 className="animate-spin" size={16} /> : <>Pay ₦{(total / 100).toLocaleString()} <ArrowRight size={15} /></>}
+              </button>
+              <p className="text-[10px] text-[--text-muted] text-center mt-3 leading-relaxed">
+                Demo mode — no real charge. Press pay and you're on the plan.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 p-4 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}>
+              <Shield size={18} style={{ color: 'var(--success)' }} />
+              <div className="text-xs text-[--text-secondary]">
+                <strong className="text-white">7-day money back.</strong> Cancel anytime in two clicks.
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Coupon */}
-        <div className="rounded-xl p-4" style={{ background: S, border: `1px solid ${B}` }}>
-          <div className="flex items-center gap-2 mb-3">
-            <Tag size={13} style={{ color: MUT }} />
-            <p className="text-xs font-bold text-white">Promo Code</p>
-          </div>
-          <div className="flex gap-2">
-            <input value={coupon} onChange={e => { setCoupon(e.target.value.toUpperCase()); setCouponResult(null); }}
-              onKeyDown={e => e.key === "Enter" && applyCoupon()}
-              placeholder="ENTER CODE"
-              className="flex-1 h-9 px-3 rounded-lg text-xs font-mono font-bold text-white uppercase outline-none"
-              style={{ background: "var(--bg-primary)", border: `1px solid ${couponResult?.valid ? "rgba(34,197,94,0.3)" : B}` }} />
-            <button onClick={applyCoupon} disabled={!coupon.trim() || applying}
-              className="h-9 px-4 rounded-lg text-xs font-bold text-white shrink-0 disabled:opacity-40"
-              style={{ background: BL }}>
-              {applying ? "…" : "Apply"}
-            </button>
-          </div>
-          {couponResult && (
-            <p className="text-xs mt-1.5" style={{ color: couponResult.valid ? GR : "#ef4444" }}>{couponResult.msg}</p>
-          )}
-        </div>
-
-        {/* CTA */}
-        <div className="flex flex-col gap-3">
-          <button onClick={() => checkout.mutate()} disabled={checkout.isPending}
-            className="w-full h-12 rounded-xl font-black text-base text-white disabled:opacity-50"
-            style={{ background: isFree ? GR : BL, boxShadow: `0 0 24px ${isFree ? "rgba(34,197,94,0.2)" : "rgba(59,130,246,0.25)"}` }}>
-            {checkout.isPending ? "Processing…" : isFree ? "Claim Free Bot" : `Pay ${fmtN(finalPrice)}`}
-          </button>
-          <div className="flex items-center justify-center gap-2 text-[10px]" style={{ color: MUT }}>
-            <ShieldCheck size={12} />
-            <span>Secured by Paystack · 256-bit SSL</span>
+            <ul className="space-y-2 text-xs text-[--text-muted]">
+              {['Instant activation', 'No setup fee', 'Cancel anytime'].map((t) => (
+                <li key={t} className="flex items-center gap-2"><Check size={12} style={{ color: 'var(--success)' }} />{t}</li>
+              ))}
+            </ul>
           </div>
         </div>
-
-        {/* Security note */}
-        <div className="flex items-start gap-3 px-4 py-3 rounded-xl" style={{ background: "rgba(59,130,246,0.05)", border: "1px solid rgba(59,130,246,0.1)" }}>
-          <Lock size={14} className="mt-0.5 shrink-0" style={{ color: BL }} />
-          <p className="text-xs" style={{ color: DIM }}>
-            Payments processed securely via <strong className="text-white">Paystack</strong>. Redon3 never stores your card details. Your panel is activated immediately after payment confirmation.
-          </p>
-        </div>
-      </main>
+      </div>
     </div>
   );
-};
-
-export default CheckoutPage;
+}
