@@ -40,6 +40,23 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Debug endpoint — PM2 logs (no auth, for quick server diagnostics)
+app.get("/api/debug/pm2", (_req, res) => {
+  const { execSync } = require("child_process");
+  const fs = require("fs");
+  try {
+    const out = execSync("pm2 logs redon3-api --lines 30 --nostream 2>&1", { timeout: 5000 }).toString();
+    let errors: string[] = [];
+    if (fs.existsSync("/tmp/redon3-errors.log")) {
+      const content = fs.readFileSync("/tmp/redon3-errors.log", "utf8");
+      errors = content.split("\n").filter(Boolean).slice(-20);
+    }
+    res.json({ logs: out.split("\n").slice(0, 30), errors });
+  } catch {
+    res.status(500).json({ error: "Could not read logs" });
+  }
+});
+
 app.use("/api", router);
 
 // Serve frontend static files

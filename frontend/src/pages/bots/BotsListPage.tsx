@@ -1,7 +1,7 @@
 
 import React, { useState } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { Bot, Plus, Search, Play, Square, RefreshCw, ChevronRight } from "lucide-react";
+import { Bot, Plus, Search, ChevronRight } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
@@ -21,13 +21,13 @@ const DIM = "rgba(255,255,255,0.45)";
 const MUT = "rgba(255,255,255,0.25)";
 const OG = "#F97316";
 
-const STATUS_DOT: Record<string, string> = {
-  running: "#10B981",
-  stopped: "rgba(255,255,255,0.18)",
-  crashed: "#EF4444",
-  suspended: "#F59E0B",
-  setting_up: "#3B82F6",
-  not_created: "rgba(255,255,255,0.12)",
+const STATUS_CFG: Record<string, { color: string; label: string; glow: string }> = {
+  running:    { color: "#22C55E", label: "Online",  glow: "rgba(34,197,94,0.15)" },
+  stopped:    { color: "#64748B", label: "Stopped", glow: "rgba(100,116,139,0.08)" },
+  crashed:    { color: "#EF4444", label: "Errored", glow: "rgba(239,68,68,0.12)" },
+  suspended:  { color: "#F59E0B", label: "Suspended", glow: "rgba(245,158,11,0.10)" },
+  setting_up: { color: "#3B82F6", label: "Deploying", glow: "rgba(59,130,246,0.12)" },
+  not_created:{ color: "#475569", label: "New", glow: "rgba(71,85,105,0.06)" },
 };
 
 function fmtUp(s: number): string {
@@ -48,6 +48,12 @@ interface Bot {
   cpuPercent: number;
   uptimeSeconds: number;
 }
+
+const RuntimeIcon: React.FC<{ runtime: string | null; size?: number }> = ({ runtime, size = 20 }) => {
+  if (runtime === "nodejs") return <NodeJSIcon style={{ width: size, height: size }} />;
+  if (runtime === "python") return <PythonIcon style={{ width: size, height: size }} />;
+  return <Bot size={size} style={{ color: MUT }} />;
+};
 
 const ConfigurePanelModal = ({ bot, onClose }: { bot: Bot; onClose: () => void }) => {
   const [, setLocation] = useLocation();
@@ -128,15 +134,6 @@ const BotsListPage: React.FC = () => {
     refetchInterval: 15_000,
   });
 
-  const act = async (id: string, action: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      await api.post(`/bots/${id}/${action}`);
-      qc.invalidateQueries({ queryKey: ["bots-list"] });
-    } catch {}
-  };
-
   const counts = {
     all: bots.length,
     running: bots.filter((b) => b.status === "running").length,
@@ -158,95 +155,87 @@ const BotsListPage: React.FC = () => {
   return (
     <DashboardLayout>
       {/* header */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-lg font-bold text-white">My Panels</h1>
-      </div>
-
-      {/* filter tabs — bleed to edge of content area */}
-      <div
-        className="flex border-b overflow-x-auto scrollbar-none -mx-4 md:-mx-8 px-4 md:px-8 mb-3"
-        style={{ borderColor: B }}>
-        {(["all", "online", "stopped", "errored"] as const).map((k) => (
-          <button
-            key={k}
-            onClick={() => setFilter(k === "online" ? "running" : k === "errored" ? "crashed" : k)}
-            className="shrink-0 px-3 py-2 text-sm font-semibold border-b-2 -mb-px whitespace-nowrap capitalize"
-            style={filter === (k === "online" ? "running" : k === "errored" ? "crashed" : k) ? { color: OG, borderColor: OG } : { color: DIM, borderColor: "transparent" }}>
-            {k}
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h1 className="text-xl font-bold text-white tracking-tight">My Panels</h1>
+          <p className="text-xs mt-0.5" style={{ color: MUT }}>{counts.running} online · {counts.stopped} offline · {counts.crashed} errored</p>
+        </div>
+        <Link href="/billing">
+          <button className="h-8 px-3 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 hover:opacity-90 transition-opacity" style={{ background: OG }}>
+            <Plus size={14} /> Deploy
           </button>
-        ))}
+        </Link>
       </div>
 
-      {/* search */}
-      <div className="relative mb-3">
-        <Search
-          size={13}
-          className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-          style={{ color: MUT }}
-        />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search panels…"
-          className="w-full h-9 pl-8 pr-3 rounded-lg text-sm text-white outline-none"
-          style={{ background: S, border: `1px solid ${B}` }}
-        />
+      {/* filter tabs */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-4">
+        {(["all", "online", "stopped", "errored"] as const).map((k) => {
+          const active = filter === (k === "online" ? "running" : k === "errored" ? "crashed" : k);
+          const count = k === "all" ? counts.all : k === "online" ? counts.running : k === "stopped" ? counts.stopped : counts.crashed;
+          return (
+            <button
+              key={k}
+              onClick={() => setFilter(k === "online" ? "running" : k === "errored" ? "crashed" : k)}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all"
+              style={active ? { background: `${OG}18`, color: OG, border: `1px solid ${OG}30` } : { color: DIM, border: `1px solid ${B}` }}>
+              <span className="capitalize">{k}</span>
+              <span className="ml-1 px-1 py-0.5 rounded text-[10px]" style={{ background: active ? `${OG}15` : S, color: active ? OG : MUT }}>{count}</span>
+            </button>
+          );
+        })}
+        <div className="flex-1 min-w-[20px]" />
+        <div className="relative">
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: MUT }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search…"
+            className="h-8 w-32 pl-7 pr-2.5 rounded-lg text-xs text-white outline-none"
+            style={{ background: S, border: `1px solid ${B}` }}
+          />
+        </div>
       </div>
 
-      {/* list */}
+      {/* grid */}
       {isLoading ? (
-        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${B}` }}>
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              className="h-12 animate-pulse border-b last:border-0"
-              style={{ background: S, borderColor: B }}
-            />
+        <div className="grid grid-cols-1 gap-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-16 animate-pulse rounded-xl" style={{ background: S }} />
           ))}
         </div>
       ) : filtered.length === 0 ? (
-        <div
-          className="flex flex-col items-center justify-center py-14 rounded-xl text-center"
-          style={{ background: S, border: `1px solid ${B}` }}>
-          <Bot size={22} className="mb-2" style={{ color: MUT }} />
-          <p className="text-base font-semibold text-white mb-1">
-            {search || filter !== "all" ? "No matches" : "No panels yet"}
-          </p>
-          <p className="text-xs mb-4" style={{ color: DIM }}>
-            {search || filter !== "all" ? "Try a different filter." : ""}
-          </p>
+        <div className="flex flex-col items-center justify-center py-20 rounded-xl text-center" style={{ background: S, border: `1px solid ${B}` }}>
+          <Bot size={28} className="mb-3" style={{ color: MUT }} />
+          <p className="text-base font-semibold text-white mb-1">{search || filter !== "all" ? "No matches" : "No panels yet"}</p>
+          <p className="text-xs mb-5" style={{ color: DIM }}>{search || filter !== "all" ? "Try a different filter." : "Deploy your first panel to get started."}</p>
           {!search && filter === "all" && (
             <Link href="/billing">
-              <button
-                className="h-8 px-4 rounded-lg text-xs font-bold text-white"
-                style={{ background: OG }}>
-                Deploy a Panel
-              </button>
+              <button className="h-9 px-5 rounded-lg text-xs font-bold text-white" style={{ background: OG }}>Deploy a Panel</button>
             </Link>
           )}
         </div>
       ) : (
-        <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${B}` }}>
+        <div className="grid grid-cols-1 gap-2">
           {filtered.map((bot) => {
-            const dot = STATUS_DOT[bot.status] ?? STATUS_DOT.not_created;
-            const rp = bot.memoryLimitMb > 0 ? Math.min(100, (bot.memoryUsedMb / bot.memoryLimitMb) * 100) : 0;
+            const cfg = STATUS_CFG[bot.status] ?? STATUS_CFG.not_created;
             const run = bot.status === "running";
-            const stopped = ["stopped", "crashed", "not_created"].includes(bot.status);
+            const memPct = bot.memoryLimitMb > 0 ? Math.min(100, (bot.memoryUsedMb / bot.memoryLimitMb) * 100) : 0;
 
             if (bot.status === "not_created" || !bot.runtime) {
               return (
                 <div
                   key={bot.id}
-                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/[0.025] transition-colors border-b last:border-0"
-                  style={{ borderColor: B }}
-                  onClick={() => setConfiguringBot(bot)}>
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[15px] font-medium text-white truncate">Tap to Configure</span>
+                  onClick={() => setConfiguringBot(bot)}
+                  className="group flex items-center gap-3 p-3 rounded-xl cursor-pointer active:scale-[0.98] transition-transform"
+                  style={{ background: `linear-gradient(135deg, ${cfg.glow}, rgba(255,255,255,0.02))`, border: `1px solid ${cfg.color}20` }}>
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: "rgba(255,255,255,0.04)" }}>
+                    <Bot size={18} style={{ color: MUT }} />
                   </div>
-                  <div className="flex items-center gap-2" style={{ color: DIM }}>
-                    <ChevronRight size={16} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-semibold text-white">New Panel</div>
+                    <div className="text-[11px]" style={{ color: DIM }}>Tap to configure</div>
                   </div>
+                  <ChevronRight size={16} style={{ color: MUT }} />
                 </div>
               );
             }
@@ -254,69 +243,43 @@ const BotsListPage: React.FC = () => {
             return (
               <Link key={bot.id} href={`/bots/${bot.id}`}>
                 <div
-                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-white/[0.025] transition-colors border-b last:border-0"
-                  style={{ borderColor: B }}>
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[15px] font-medium text-white truncate">{bot.name}</span>
-                      {bot.runtime && (
-                        <span
-                          className="text-[13px] font-mono px-1.5 py-0.5 rounded"
-                          style={{ background: "rgba(255,255,255,0.06)", color: DIM }}>
-                          {bot.runtime}
-                        </span>
-                      )}
+                  className="group flex items-center gap-3 p-3 rounded-xl cursor-pointer active:scale-[0.98] transition-transform"
+                  style={{
+                    background: `linear-gradient(135deg, ${cfg.glow}, rgba(255,255,255,0.02))`,
+                    border: `1px solid ${cfg.color}18`,
+                  }}>
+                  {/* left accent bar */}
+                  <div className="w-1 self-stretch rounded-full shrink-0" style={{ background: cfg.color }} />
+
+                  {/* icon */}
+                  <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${cfg.color}10` }}>
+                    <RuntimeIcon runtime={bot.runtime} size={20} />
+                  </div>
+
+                  {/* content */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[13px] font-semibold text-white truncate">{bot.name}</span>
                     </div>
-                    {run && (
-                      <div className="flex items-center gap-1.5 mt-1">
-                        <div
-                          className="w-20 h-0.5 rounded-full overflow-hidden"
-                          style={{ background: "rgba(255,255,255,0.08)" }}>
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${rp}%`, background: rp > 80 ? "#EF4444" : OG }}
-                          />
-                        </div>
-                        <span className="text-[13px] font-mono" style={{ color: MUT }}>
-                          {bot.memoryUsedMb}/{bot.memoryLimitMb}MB · {bot.cpuPercent.toFixed(0)}% CPU
-                        </span>
+                    {run ? (
+                      <div className="flex items-center gap-3">
+                        <span className="text-[11px] font-mono" style={{ color: cfg.color }}>{bot.cpuPercent.toFixed(0)}% CPU</span>
+                        <span className="text-[11px] font-mono" style={{ color: DIM }}>{fmtUp(bot.uptimeSeconds)}</span>
                       </div>
+                    ) : (
+                      <span className="text-[11px]" style={{ color: DIM }}>{cfg.label}</span>
                     )}
                   </div>
-                  <div className="hidden sm:flex flex-col items-end gap-0.5 shrink-0">
-                    <span className="text-[13px] font-semibold" style={{ color: run ? "#10B981" : DIM }}>
-                      {run ? "Online" : (bot.status === "crashed" ? "Errored" : "Stopped")}
+
+                  {/* right status */}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="relative flex h-2 w-2">
+                      {run && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-40" style={{ background: cfg.color }} />}
+                      <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: cfg.color }} />
                     </span>
                     {run && (
-                      <span className="text-xs" style={{ color: MUT }}>
-                        {fmtUp(bot.uptimeSeconds)}
-                      </span>
+                      <span className="text-[10px] font-mono" style={{ color: DIM }}>{Math.round(memPct)}%</span>
                     )}
-                  </div>
-                  <div className="flex gap-0.5 shrink-0">
-                    {stopped && (
-                      <button
-                        onClick={(e) => act(bot.id, "start", e)}
-                        className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/10"
-                        style={{ color: "#10B981" }}>
-                        <Play size={12} fill="currentColor" />
-                      </button>
-                    )}
-                    {run && (
-                      <button
-                        onClick={(e) => act(bot.id, "stop", e)}
-                        className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/10"
-                        style={{ color: "#EF4444" }}>
-                        <Square size={12} fill="currentColor" />
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => act(bot.id, "restart", e)}
-                      className="w-7 h-7 rounded flex items-center justify-center hover:bg-white/10"
-                      style={{ color: MUT }}>
-                      <RefreshCw size={12} />
-                    </button>
                   </div>
                 </div>
               </Link>

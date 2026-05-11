@@ -18,10 +18,9 @@ export const DashboardLayout: React.FC<Props> = ({ children, fullHeight }) => {
         {!isMobile && <Sidebar />}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {isMobile && <MobileTopBar />}
-          <main className={`flex-1 flex flex-col overflow-hidden min-h-0 ${isMobile ? 'pt-20 pb-24' : ''}`}>
+          <main className={`flex-1 flex flex-col overflow-hidden min-h-0 ${isMobile ? 'pt-20' : ''}`}>
             {children}
           </main>
-          {isMobile && <BottomNav />}
         </div>
       </div>
     );

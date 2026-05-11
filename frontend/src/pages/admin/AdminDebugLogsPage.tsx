@@ -53,8 +53,9 @@ export const AdminDebugLogsPage: React.FC = () => {
       if (search) params.set('search', search);
       if (typeFilter !== 'all') params.set('type', typeFilter);
       const res = await api.get(`/debug/logs?${params}`);
-      setLogs(res.data.lines);
-      setTotal(res.data.total);
+      const data = res.data ?? {};
+      setLogs(Array.isArray(data.lines) ? data.lines : []);
+      setTotal(typeof data.total === 'number' ? data.total : 0);
     } catch { /* silent */ }
     finally { setLoading(false); }
   }, [search, typeFilter, lines]);

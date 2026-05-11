@@ -105,103 +105,92 @@ const plans: Plan[] = [
 ];
 
 export const PlanCards: React.FC = () => (
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-6xl mx-auto items-start">
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-6xl mx-auto items-stretch">
     {plans.map((plan) => (
       <div
         key={plan.id}
-        className="relative flex flex-col rounded-2xl border transition-all duration-200"
+        className="relative flex flex-col rounded-2xl overflow-hidden"
         style={{
           background: plan.popular
-            ? 'linear-gradient(160deg, #16100a 0%, #0e1117 100%)'
-            : BG2,
-          borderColor: plan.popular ? 'rgba(249,115,22,0.5)' : B,
+            ? 'linear-gradient(180deg, rgba(249,115,22,0.08) 0%, rgba(14,17,23,0.95) 100%)'
+            : 'linear-gradient(180deg, rgba(255,255,255,0.03) 0%, rgba(14,17,23,0.9) 100%)',
+          border: `1px solid ${plan.popular ? 'rgba(249,115,22,0.35)' : B}`,
           boxShadow: plan.popular
-            ? '0 0 60px rgba(249,115,22,0.14), 0 0 0 1px rgba(249,115,22,0.08)'
-            : 'none',
-          marginTop: plan.popular ? 0 : 16,
+            ? '0 0 40px rgba(249,115,22,0.12), inset 0 1px 0 rgba(249,115,22,0.1)'
+            : '0 4px 24px rgba(0,0,0,0.2)',
         }}
       >
-        {/* Most Popular badge */}
+        {/* Popular badge */}
         {plan.popular && (
-          <div
-            className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[11px] font-bold uppercase tracking-wider text-white whitespace-nowrap"
-            style={{ background: '#F97316', boxShadow: '0 0 20px rgba(249,115,22,0.5)' }}>
-            <Zap size={10} fill="currentColor" />
-            Most Popular
+          <div className="flex items-center justify-center gap-1.5 py-2" style={{ background: 'rgba(249,115,22,0.15)', borderBottom: '1px solid rgba(249,115,22,0.2)' }}>
+            <Zap size={12} fill="currentColor" style={{ color: '#F97316' }} />
+            <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#F97316' }}>Most Popular</span>
           </div>
         )}
 
         {/* Header */}
-        <div className="p-7 pb-5 border-b" style={{ borderColor: plan.popular ? 'rgba(249,115,22,0.18)' : B }}>
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] mb-4"
+        <div className="p-6 pb-4">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] mb-3"
             style={{ color: plan.popular ? '#F97316' : 'var(--text-muted)' }}>
             {plan.label}
           </div>
 
-          <h3 className="text-2xl font-extrabold text-white mb-1" style={{ fontFamily: D }}>{plan.name}</h3>
-          <p className="text-xs font-medium mb-5" style={{ color: 'var(--text-muted)' }}>{plan.bots}</p>
+          <h3 className="text-xl font-extrabold text-white mb-1" style={{ fontFamily: D }}>{plan.name}</h3>
+          <p className="text-xs font-medium mb-4" style={{ color: 'var(--text-muted)' }}>{plan.bots}</p>
 
-          {/* Price block */}
-          <div className="mb-2">
-            <div className="flex items-baseline gap-1.5">
-              <span
-                className="text-[48px] font-extrabold leading-none tracking-tight"
-                style={{ fontFamily: D, color: plan.popular ? '#F97316' : 'white' }}>
-                {plan.price}
-              </span>
-              <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>/mo</span>
-            </div>
-            <div className="flex items-center gap-2 mt-1.5">
-              <span className="text-xs font-bold" style={{ color: plan.popular ? 'rgba(249,115,22,0.8)' : 'var(--text-muted)' }}>
-                {plan.perDay}
-              </span>
-              {plan.perDayNote && (
-                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>· {plan.perDayNote}</span>
-              )}
-            </div>
+          {/* Price */}
+          <div className="flex items-baseline gap-1">
+            <span className="text-[40px] font-extrabold leading-none tracking-tight"
+              style={{ fontFamily: D, color: plan.popular ? '#F97316' : 'white' }}>
+              {plan.price}
+            </span>
+            <span className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>/mo</span>
           </div>
-
-          {/* Savings badge */}
-          {plan.savingsNote && (
-            <div className="flex items-center gap-1.5 mt-3 mb-1">
-              <TrendingUp size={12} style={{ color: '#22C55E' }} />
-              <span className="text-[11px] font-semibold" style={{ color: '#22C55E' }}>{plan.savingsNote}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-2 mt-1 mb-4">
+            <span className="text-xs font-bold" style={{ color: plan.popular ? 'rgba(249,115,22,0.8)' : 'var(--text-muted)' }}>
+              {plan.perDay}
+            </span>
+            {plan.perDayNote && (
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>· {plan.perDayNote}</span>
+            )}
+          </div>
 
           {/* Social proof */}
           {plan.socialProof && (
-            <div className="flex items-center gap-1.5 mt-2">
+            <div className="flex items-center gap-1.5 py-2 px-3 rounded-lg" style={{ background: 'rgba(255,255,255,0.03)' }}>
               <Users size={11} style={{ color: 'var(--text-muted)' }} />
               <span className="text-[11px] font-medium" style={{ color: 'var(--text-muted)' }}>{plan.socialProof}</span>
             </div>
           )}
         </div>
 
-        {/* Features */}
-        <div className="p-7 flex-grow">
-          <p className="text-sm mb-5 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{plan.description}</p>
+        {/* Divider */}
+        <div className="mx-6 h-px" style={{ background: plan.popular ? 'rgba(249,115,22,0.15)' : B }} />
 
-          <ul className="space-y-3">
+        {/* Features */}
+        <div className="p-6 flex-grow">
+          <p className="text-sm mb-4 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{plan.description}</p>
+
+          <ul className="space-y-2.5">
             {plan.features.map((feat) => (
-              <li key={feat} className="flex items-center gap-3 text-sm">
-                <span className="flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center"
-                  style={{ background: plan.popular ? 'rgba(249,115,22,0.18)' : 'rgba(255,255,255,0.06)' }}>
-                  <Check size={10} style={{ color: plan.popular ? '#F97316' : 'var(--text-muted)' }} />
+              <li key={feat} className="flex items-center gap-2.5 text-sm">
+                <span className="flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center"
+                  style={{ background: plan.popular ? 'rgba(249,115,22,0.15)' : 'rgba(255,255,255,0.05)' }}>
+                  <Check size={10} style={{ color: plan.popular ? '#F97316' : '#22C55E' }} />
                 </span>
-                <span style={{ color: plan.popular ? '#E2D5C8' : 'var(--text-secondary)' }}>{feat}</span>
+                <span style={{ color: 'var(--text-secondary)' }}>{feat}</span>
               </li>
             ))}
           </ul>
 
-          {/* Locked features — creates loss aversion on Starter */}
+          {/* Locked features */}
           {plan.lockedFeatures && plan.lockedFeatures.length > 0 && (
-            <div className="mt-5 pt-4 border-t" style={{ borderColor: B }}>
-              <ul className="space-y-3">
+            <div className="mt-4 pt-4" style={{ borderTop: `1px solid ${B}` }}>
+              <ul className="space-y-2.5">
                 {plan.lockedFeatures.map((feat) => (
-                  <li key={feat} className="flex items-center gap-3 text-sm opacity-40">
-                    <span className="flex-shrink-0 w-[18px] h-[18px] rounded-full flex items-center justify-center"
-                      style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  <li key={feat} className="flex items-center gap-2.5 text-sm opacity-50">
+                    <span className="flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center"
+                      style={{ background: 'rgba(255,255,255,0.03)' }}>
                       <Lock size={9} style={{ color: 'var(--text-muted)' }} />
                     </span>
                     <span className="line-through" style={{ color: 'var(--text-muted)' }}>{feat}</span>
@@ -218,19 +207,19 @@ export const PlanCards: React.FC = () => (
         </div>
 
         {/* CTA */}
-        <div className="p-7 pt-0">
+        <div className="p-6 pt-0 mt-auto">
           <Link href={`/checkout?plan=${plan.id}`}>
             <Button
-              className="w-full h-12 font-bold text-sm flex items-center justify-center gap-2"
+              className="w-full h-11 font-bold text-sm flex items-center justify-center gap-2 rounded-xl transition-all hover:opacity-90"
               style={plan.popular
-                ? { background: '#F97316', color: 'white', boxShadow: '0 4px 24px rgba(249,115,22,0.35)' }
-                : { background: BG3, color: 'var(--text-primary)', border: `1px solid ${B}` }
+                ? { background: '#F97316', color: 'white', boxShadow: '0 4px 20px rgba(249,115,22,0.3)' }
+                : { background: 'rgba(255,255,255,0.06)', color: 'var(--text-primary)', border: `1px solid ${B}` }
               }>
               {plan.cta}
               {plan.popular && <ArrowRight size={14} />}
             </Button>
           </Link>
-          <p className="text-center text-[11px] mt-3" style={{ color: 'var(--text-muted)' }}>
+          <p className="text-center text-[11px] mt-2.5" style={{ color: 'var(--text-muted)' }}>
             {plan.ctaSub}
           </p>
         </div>

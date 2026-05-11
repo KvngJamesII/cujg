@@ -12,6 +12,9 @@ if (!rawPort) throw new Error("PORT environment variable is required but was not
 const port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
 
+// Clear error log on startup
+try { require("fs").unlinkSync("/tmp/redon3-errors.log"); } catch {}
+
 const httpServer = createServer(app);
 
 const io = new SocketServer(httpServer, {
@@ -32,19 +35,28 @@ function extractUserId(cookieHeader: string | undefined): string | null {
 }
 
 io.on("connection", (socket) => {
-  logger.info({ socketId: socket.id }, "Socket connected");
+  logger.info({ socketId: socket.id, cookie: socket.handshake.headers.cookie ? "present" : "missing" }, "Socket connected");
 
   const userId = extractUserId(socket.handshake.headers.cookie);
+  logger.info({ socketId: socket.id, userId: userId ?? "null" }, "Socket auth result");
   const stdinStreams = new Map<string, { write: (d: string) => void; end: () => void }>();
 
   // ── Console log streaming ───────────────────────────────────────────────
+  // Track active log streams per socket to prevent duplicates
+  const activeCleanups = new Map<string, () => void>();
+
   socket.on("logs:subscribe", ({ botId }: { botId: string }) => {
+    logger.info({ socketId: socket.id, botId, userId: userId ?? "null" }, "logs:subscribe received");
     if (!userId) { socket.emit("error", "Unauthorized"); return; }
+
+    // Stop any previous stream for this bot
+    const prev = activeCleanups.get(botId);
+    if (prev) { prev(); activeCleanups.delete(botId); }
 
     socket.join(`bot:${botId}`);
 
     const cleanupLogs = streamContainerLogs(userId, botId, (line, isStderr) => {
-      socket.emit("logs:line", { line, isStderr, timestamp: new Date().toISOString() });
+      socket.emit("console-log", { text: line, isStderr });
     });
 
     getContainerStdinStream(userId, botId).then((s) => {
@@ -55,12 +67,14 @@ io.on("connection", (socket) => {
       cleanupLogs();
       const s = stdinStreams.get(botId);
       if (s) { s.end(); stdinStreams.delete(botId); }
+      activeCleanups.delete(botId);
     };
+    activeCleanups.set(botId, cleanup);
     socket.on("logs:unsubscribe", cleanup);
     socket.on("disconnect", cleanup);
   });
 
-  socket.on("stdin:write", ({ botId, data }: { botId: string; data: string }) => {
+  socket.on("console-input", ({ botId, data }: { botId: string; data: string }) => {
     if (!userId) return;
     const s = stdinStreams.get(botId);
     if (s) s.write(data);
@@ -124,4 +138,15 @@ io.on("connection", (socket) => {
 httpServer.listen(port, "0.0.0.0", (err?: Error) => {
   if (err) { logger.error({ err }, "Error listening on port"); process.exit(1); }
   logger.info({ port }, "Redon3 API server listening");
+});
+
+// Global error handlers to prevent process crashes
+process.on("uncaughtException", (err) => {
+  logger.error({ err, origin: "uncaughtException" }, "Uncaught exception — keeping process alive");
+  require("fs").appendFileSync("/tmp/redon3-errors.log", `[${new Date().toISOString()}] UNCAUGHT ${err.message}\n${err.stack}\n`);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error({ err: reason, origin: "unhandledRejection" }, "Unhandled rejection — keeping process alive");
+  require("fs").appendFileSync("/tmp/redon3-errors.log", `[${new Date().toISOString()}] UNHANDLED ${reason}\n`);
 });

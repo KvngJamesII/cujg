@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { io, type Socket } from "socket.io-client";
 import {
   Play, Square, RefreshCw, ChevronLeft, Trash2, X, Save, Undo2, Redo2,
-  Upload, FolderUp, FilePlus, FolderPlus, MoreVertical, Pencil, Copy,
+  Upload, FolderUp, FilePlus, FolderPlus, MoreVertical, Pencil, Copy, Check,
   Download, FolderInput, Folder, FolderOpen, ChevronRight, Loader2, Send,
-  Eraser, AlertTriangle,
+  Eraser, AlertTriangle, Bug, Zap, Cpu, HardDrive, RotateCcw, Terminal,
 } from "lucide-react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
@@ -103,7 +103,10 @@ const socket: Socket = io(window.location.origin, { path: "/api/socket.io", auto
 /* ═════════════════════ MAIN PAGE ═════════════════════ */
 const BotDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const [tab, setTab] = useState<"console" | "files" | "startup" | "config">("console");
+  const [tab, setTab] = useState<"console" | "files" | "startup" | "config" | "logs">("console");
+  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const seenLines = useRef(new Set<string>());
   const qc = useQueryClient();
   const t = useToast();
 
@@ -113,19 +116,82 @@ const BotDetailPage: React.FC = () => {
     refetchInterval: 5000,
   });
 
+  const isRunning = bot?.status === "running";
+
+  // Keep socket connected at all times
+  useEffect(() => {
+    if (!id) return;
+    if (!socket.connected) socket.connect();
+  }, [id]);
+
+  // Subscribe/unsubscribe to logs based on running status
+  useEffect(() => {
+    if (!id) return;
+
+    // Always unsubscribe first
+    socket.off("console-log");
+    socket.emit("logs:unsubscribe", { botId: id });
+
+    if (!isRunning) {
+      setStreaming(false);
+      return;
+    }
+
+    seenLines.current.clear();
+    setStreaming(true); // Show streaming state immediately on subscribe
+
+    const onLog = (l: LogLine) => {
+      if (seenLines.current.has(l.text)) return;
+      seenLines.current.add(l.text);
+      if (seenLines.current.size > 200) {
+        const arr = [...seenLines.current];
+        arr.shift();
+        seenLines.current = new Set(arr);
+      }
+      setStreaming(true);
+      setLogs((p: LogLine[]) => [...p.slice(-49), l]);
+    };
+
+    const doSubscribe = () => {
+      socket.off("console-log", onLog);
+      socket.on("console-log", onLog);
+      socket.emit("logs:subscribe", { botId: id });
+    };
+
+    if (socket.connected) {
+      doSubscribe();
+    } else {
+      socket.connect();
+      socket.once("connect", doSubscribe);
+    }
+
+    return () => {
+      socket.off("console-log", onLog);
+      socket.emit("logs:unsubscribe", { botId: id });
+    };
+  }, [id, isRunning]);
+
   const action = useMutation({
-    mutationFn: async (a: "start" | "stop" | "restart") =>
-      (await api.post(`/bots/${id}/${a}`)).data,
+    mutationFn: async (a: "start" | "stop" | "restart") => {
+      setLogs([]); setStreaming(false);
+      return (await api.post(`/bots/${id}/${a}`)).data;
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["bot", id] }),
-    onError: (e: any) => t.error("Action failed", e?.response?.data?.error ?? "Try again"),
+    onError: (e: any) => {
+      const msg = e?.response?.data?.error ?? e?.message ?? "Try again";
+      const status = e?.response?.status;
+      const fullMsg = `${msg} (${status})`;
+      console.error(`[REDON3 ACTION ERROR] ${fullMsg}`, e);
+      t.error("Action failed", fullMsg);
+    },
   });
 
-  const isRunning = bot?.status === "running";
+  const isSettingUp = bot?.status === "setting_up";
   const runtime = bot?.runtime;
 
   return (
     <DashboardLayout fullHeight>
-      <div className="flex flex-col h-full" style={{ background: C.bg, color: C.text }}>
+      <div className="flex flex-col flex-1 min-h-0" style={{ background: C.bg, color: C.text }}>
         {/* HEADER */}
         <header
           className="flex items-center gap-2 px-3 py-2.5 border-b shrink-0"
@@ -153,12 +219,12 @@ const BotDetailPage: React.FC = () => {
 
           <button
             onClick={() => action.mutate(isRunning ? "stop" : "start")}
-            disabled={action.isPending}
+            disabled={action.isPending || isSettingUp}
             className="flex items-center gap-1 h-8 px-2.5 rounded-md text-[11px] font-bold text-white disabled:opacity-50 shrink-0"
-            style={{ background: isRunning ? C.red : C.green }}
+            style={{ background: isSettingUp ? C.yellow : isRunning ? C.red : C.green }}
           >
-            {isRunning ? <Square size={11} fill="white" /> : <Play size={11} fill="white" />}
-            {isRunning ? "Stop" : "Start"}
+            {action.isPending ? <Loader2 size={11} className="animate-spin" /> : isSettingUp ? <Loader2 size={11} className="animate-spin" /> : isRunning ? <Square size={11} fill="white" /> : <Play size={11} fill="white" />}
+            {action.isPending ? "Wait…" : isSettingUp ? "Deploying" : isRunning ? "Stop" : "Start"}
           </button>
           <button
             onClick={() => action.mutate("restart")}
@@ -166,7 +232,7 @@ const BotDetailPage: React.FC = () => {
             className="flex items-center gap-1 h-8 px-2.5 rounded-md text-[11px] font-bold text-black disabled:opacity-30 shrink-0"
             style={{ background: C.yellow }}
           >
-            <RefreshCw size={11} />
+            {action.isPending ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
           </button>
         </header>
 
@@ -175,7 +241,7 @@ const BotDetailPage: React.FC = () => {
           className="flex shrink-0 border-b"
           style={{ borderColor: C.border, background: C.surface }}
         >
-          {(["console", "files", "startup", "config"] as const).map((k) => (
+          {(["console", "files", "startup", "config", "logs"] as const).map((k) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -195,10 +261,11 @@ const BotDetailPage: React.FC = () => {
 
         {/* TAB BODY (fills remaining space, no page scroll) */}
         <div className="flex-1 min-h-0 overflow-hidden">
-          {tab === "console" && <ConsoleTab botId={id!} bot={bot} />}
+          {tab === "console" && <ConsoleTab botId={id!} bot={bot} logs={logs} streaming={streaming} isPending={action.isPending} onEchoLog={(text) => setLogs((p) => [...p.slice(-49), { text, isStderr: false }])} />}
           {tab === "files" && <FilesTab botId={id!} runtime={runtime} />}
           {tab === "startup" && <StartupTab botId={id!} bot={bot} />}
           {tab === "config" && <ConfigTab bot={bot} />}
+          {tab === "logs" && <LogsTab botId={id!} bot={bot} />}
         </div>
       </div>
     </DashboardLayout>
@@ -213,140 +280,310 @@ interface LogLine { text: string; isStderr: boolean; }
 const colorize = (l: LogLine) => {
   if (l.isStderr) return C.red;
   const t = l.text.toLowerCase();
-  if (t.includes("error")) return C.red;
+  if (t.includes("error") || t.includes("fail") || t.includes("exception")) return C.red;
   if (t.includes("warn")) return C.yellow;
+  if (t.includes("installing") || t.includes("dependencies")) return "#F59E0B";
+  if (t.includes("[redon3]")) return "#F59E0B";
+  if (t.includes("panel is offline")) return "#F59E0B";
+  if (t.includes("panel is online") || t.includes("now running") || t.includes("dependencies installed") || t.includes("all dependencies present")) return C.green;
   if (t.includes("ready") || t.includes("listening") || t.includes("connected")) return C.green;
   if (t.startsWith("> ")) return C.cyan;
   return "#D1D5DB";
 };
 
-const ConsoleTab: React.FC<{ botId: string; bot: any }> = ({ botId, bot }) => {
-  const [logs, setLogs] = useState<LogLine[]>([]);
+type ErrorTranslation = { pattern: RegExp; title: string; message: (m: RegExpMatchArray) => string };
+const ERROR_TRANSLATIONS: ErrorTranslation[] = [
+  { pattern: /cannot find module ['"](.+?)['"]/i, title: "Missing module", message: (m) => `The file or package "${m[1]}" was not found. Make sure it exists in your files or is listed in your dependency file.` },
+  { pattern: /enoent.*stat.*['"](\/app\/.+?)['"]/i, title: "File not found", message: (m) => `The file "${m[1]}" does not exist. Check your startup file path in the Startup tab.` },
+  { pattern: /modulenotfound|cannot find package/i, title: "Missing dependency", message: () => `A required npm/pip package is not installed. Make sure it's in package.json or requirements.txt. The system auto-installs on start.` },
+  { pattern: /eaddrinuse|address already in use/i, title: "Port already in use", message: () => `Your panel tried to use a port that's already taken. Try a different port in your code.` },
+  { pattern: /out of memory|oom/i, title: "Out of memory", message: () => `Your panel ran out of RAM. Upgrade to Pro for more memory, or optimize your code.` },
+  { pattern: /syntax ?error/i, title: "Syntax error", message: () => `There's a syntax error in your code. Check the line mentioned in the error above.` },
+  { pattern: /command not found/i, title: "Command not found", message: () => `A command your panel tried to run is not available. For Alpine containers, use 'apk add' to install system tools.` },
+  { pattern: /npm err|pip.*error/i, title: "Install failed", message: () => `Package installation failed. The package name may be wrong or there's a network issue.` },
+  { pattern: /exit code|exited with/i, title: "Panel crashed", message: () => `Your panel stopped unexpectedly. Check the errors above. The container restarts automatically.` },
+];
+
+const scanErrors = (logLines: LogLine[]) => {
+  for (const line of logLines) {
+    if (line.isStderr || /error|fail|exception/i.test(line.text)) {
+      for (const t of ERROR_TRANSLATIONS) {
+        const m = line.text.match(t.pattern);
+        if (m) return { error: t, match: m };
+      }
+    }
+  }
+  return { error: null, match: null };
+};
+
+const ConsoleTab: React.FC<{ botId: string; bot: any; logs: LogLine[]; streaming: boolean; isPending: boolean; onEchoLog: (text: string) => void }> = ({ botId, bot, logs, streaming, isPending, onEchoLog }) => {
   const [input, setInput] = useState("");
   const [stats, setStats] = useState<{ cpu: number; ram: number; restarts: number }>({
     cpu: 0, ram: 0, restarts: 0,
   });
+  const [userScrolled, setUserScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const stopped = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const scrollToBottom = () => {
+    const el = scrollRef.current;
+    if (el) { el.scrollTop = el.scrollHeight; setUserScrolled(false); }
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    setUserScrolled(!atBottom);
+  };
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
-    const onLog = (l: LogLine) => { if (!stopped.current) setLogs((p) => [...p.slice(-499), l]); };
-    const onStats = (s: any) => setStats((prev) => ({
-      cpu: s?.cpuPercent ?? prev.cpu,
-      ram: s?.memoryUsedMb ?? prev.ram,
-      restarts: s?.restarts ?? prev.restarts,
-    }));
-    socket.on("console-log", onLog);
-    socket.on("container-stats", onStats);
-    socket.emit("logs:subscribe", { botId });
-    return () => {
-      socket.off("console-log", onLog);
-      socket.off("container-stats", onStats);
-      socket.emit("logs:unsubscribe", { botId });
-    };
-  }, [botId]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (!userScrolled) scrollToBottom();
   }, [logs]);
+
+  // On mobile, scroll console into view when virtual keyboard opens
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const onResize = () => {
+      setTimeout(() => {
+        inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+      }, 100);
+    };
+    vv.addEventListener("resize", onResize);
+    return () => vv.removeEventListener("resize", onResize);
+  }, []);
 
   const send = () => {
     if (!input.trim()) return;
-    socket.emit("console-input", { botId, data: input });
-    setLogs((p) => [...p, { text: `> ${input}`, isStderr: false }]);
+    socket.emit("console-input", { botId, data: input + "\n" });
+    onEchoLog(`> ${input}`);
     setInput("");
   };
 
+  const isRunning = bot?.status === "running";
   const ramLimit = bot?.memoryLimitMb ?? 500;
   const memLimit = (bot?.plan === "pro" ? 1024 : 500);
 
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const { error: detectedError, match: errorMatch } = scanErrors(logs);
+  const errorMessage = detectedError && errorMatch ? detectedError.message(errorMatch) : "";
+
+  const formatLogLine = (text: string): string => {
+    const now = new Date();
+    const ts = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    return `${ts} ${text}`;
+  };
+
   return (
-    <div className="flex flex-col h-full p-2 gap-2">
-      {/* Toolbar */}
-      <div className="flex items-center gap-2 shrink-0">
-        <button
-          onClick={() => { stopped.current = !stopped.current; }}
-          className="h-7 px-2.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
-          style={{ background: "rgba(239,68,68,0.12)", color: C.red, border: `1px solid rgba(239,68,68,0.25)` }}
-        >
-          <Square size={10} /> Stop stream
-        </button>
-        <button
-          onClick={() => setLogs([])}
-          className="h-7 px-2.5 rounded-md text-[10px] font-semibold flex items-center gap-1"
-          style={{ background: "rgba(255,255,255,0.04)", color: C.dim, border: `1px solid ${C.border}` }}
-        >
-          <Eraser size={10} /> Clear
-        </button>
-        <span className="ml-auto text-[10px]" style={{ color: C.mute }}>
-          {logs.length} lines
-        </span>
+    <div className="flex flex-col h-full p-2 gap-1.5">
+      {/* Error banner */}
+      {detectedError && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg shrink-0 cursor-pointer"
+          style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}
+          onClick={() => setShowErrorModal(true)}>
+          <span className="text-xs font-semibold" style={{ color: C.red }}>{detectedError.title}</span>
+          <span className="text-[11px] ml-auto" style={{ color: C.dim }}>Tap for help →</span>
+        </div>
+      )}
+
+      {/* Console Header */}
+      <div className="flex items-center justify-between shrink-0 px-2 py-1.5 rounded-t-lg"
+        style={{ background: "rgba(255,255,255,0.02)", border: `1px solid ${C.border}`, borderBottom: "none" }}>
+        <div className="flex items-center gap-2">
+          <Terminal size={12} style={{ color: C.mute }} />
+          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: C.mute }}>Console</span>
+          <span className="relative flex h-1.5 w-1.5">
+            {streaming && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-40" style={{ background: C.green }} />}
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5" style={{ background: streaming ? C.green : C.mute }} />
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono" style={{ color: C.mute }}>{logs.length} lines</span>
+          {logs.length > 0 && (
+            <button onClick={() => setLogs([])} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-white/5 transition-colors" style={{ color: C.dim }}>
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Console */}
-      <div
-        ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto rounded-lg p-2.5 font-mono text-[11px] leading-relaxed"
-        style={{
-          background: C.console,
-          border: `1px solid ${C.border}`,
-          fontFamily: "'JetBrains Mono', monospace",
-        }}
-      >
-        {logs.length === 0 ? (
-          <div style={{ color: C.mute }} className="text-center pt-4 text-[11px]">
-            Waiting for output…
-          </div>
-        ) : logs.map((l, i) => (
-          <div key={i} style={{ color: colorize(l) }} className="whitespace-pre-wrap break-words">
-            {l.text}
-          </div>
-        ))}
+      <div className="relative flex-1 min-h-0" style={{ minHeight: "80px", maxHeight: "280px" }}>
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="absolute inset-0 overflow-y-auto rounded-b-lg p-2 font-mono text-[11px] leading-relaxed"
+          style={{
+            background: C.console,
+            border: `1px solid ${C.border}`,
+            borderTop: "none",
+            fontFamily: "'JetBrains Mono', monospace",
+          }}
+        >
+          {logs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full gap-2">
+              <Terminal size={16} style={{ color: "rgba(255,255,255,0.08)" }} />
+              <div style={{ color: C.mute }} className="text-[11px]">
+                {isPending ? "Starting..." : streaming ? "Waiting for logs..." : "Panel is offline"}
+              </div>
+            </div>
+          ) : logs.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-words leading-relaxed py-0.5 px-1 rounded" style={{ color: colorize(l), background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
+              <span style={{ color: "#4B5563", marginRight: "8px" }}>{new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}</span>
+              {l.text}
+            </div>
+          ))}
+        </div>
+        {userScrolled && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-2 right-2 w-7 h-7 rounded-full flex items-center justify-center z-10 shadow-lg"
+            style={{ background: C.card, border: `1px solid ${C.borderStrong}` }}
+            title="Scroll to latest"
+          >
+            <ChevronRight size={12} style={{ transform: "rotate(90deg)", color: C.dim }} />
+          </button>
+        )}
       </div>
 
-      {/* stdin input */}
-      <div
-        className="flex items-center gap-1.5 shrink-0 rounded-lg px-2"
-        style={{ background: C.console, border: `1px solid ${C.border}` }}
-      >
-        <span className="text-xs font-mono" style={{ color: C.green }}>$</span>
+      {/* stdin input — always visible */}
+      <div className="flex items-center gap-0 shrink-0 rounded-lg overflow-hidden"
+        style={{ background: C.console, border: `1px solid ${C.border}` }}>
+        <span className="text-xs font-mono pl-2.5 select-none" style={{ color: C.green }}>→</span>
         <input
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
-          placeholder="Type input…"
-          className="flex-1 bg-transparent outline-none text-[12px] font-mono py-2 text-white placeholder:text-white/20"
+          onKeyDown={(e) => { if (e.key === "Enter") send(); }}
+          onFocus={() => {
+            setTimeout(() => {
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+              inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+            }, 300);
+          }}
+          placeholder="Input..."
+          className="flex-1 bg-transparent outline-none text-[12px] font-mono py-1.5 px-1.5 text-white placeholder:text-white/15"
         />
-        <button
-          onClick={send}
-          disabled={!input.trim()}
-          className="p-1.5 rounded-md disabled:opacity-30"
-          style={{ color: C.accent }}
-        >
-          <Send size={14} />
-        </button>
       </div>
 
-      {/* 3 mini stat cards */}
-      <div className="grid grid-cols-3 gap-2 shrink-0">
-        <StatCard label="RAM" value={`${stats.ram || bot?.memoryUsedMb || 0}/${ramLimit}MB`} color={C.cyan} />
-        <StatCard label="MEM" value={`${stats.ram || 0}/${memLimit > 999 ? "1GB" : `${memLimit}MB`}`} color={C.blue} />
-        <StatCard label="Restarts" value={`${stats.restarts}`} color={C.accent} />
+      {/* Storage + Restarts side by side */}
+      <div className="grid grid-cols-2 gap-2 shrink-0" style={{ minHeight: "100px" }}>
+        <StorageCard used={stats.ram || 0} limit={memLimit} />
+        <RestartCard count={stats.restarts} />
+      </div>
+
+      {/* RAM — full width horizontal bar */}
+      <RamBarCard used={stats.ram || bot?.memoryUsedMb || 0} limit={ramLimit} />
+
+      {/* Error help modal */}
+      {showErrorModal && detectedError && (
+        <Modal title={detectedError.title} onClose={() => setShowErrorModal(false)}>
+          <div className="text-sm leading-relaxed" style={{ color: C.dim }}>
+            <p>{errorMessage}</p>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+/* ─── Circular gauge ring ─── */
+const RingGauge: React.FC<{ pct: number; color: string; size?: number; stroke?: number; children?: React.ReactNode }> = ({ pct, color, size = 56, stroke = 4, children }) => {
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (Math.min(pct, 100) / 100) * circ;
+  return (
+    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset 0.6s ease" }} />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">{children}</div>
+    </div>
+  );
+};
+
+/* RAM — full-width premium bar */
+const RamBarCard: React.FC<{ used: number; limit: number }> = ({ used, limit }) => {
+  const pct = limit > 0 ? (used / limit) * 100 : 0;
+  const color = pct > 85 ? C.red : pct > 60 ? C.yellow : C.cyan;
+  return (
+    <div className="rounded-xl px-4 py-3 flex flex-col gap-2 shrink-0"
+      style={{ background: `linear-gradient(135deg, ${color}06, ${C.card})`, border: `1px solid ${color}18` }}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${color}12` }}>
+            <Cpu size={16} style={{ color }} />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.12em] font-bold" style={{ color: C.mute }}>RAM</div>
+            <div className="text-[11px] font-mono" style={{ color: C.dim }}>{used.toFixed(1)}<span style={{ color: C.mute }}>/{limit}MB</span></div>
+          </div>
+        </div>
+        <span className="text-[18px] font-black font-mono" style={{ color }}>{Math.round(pct)}<span className="text-[11px]" style={{ color: C.mute }}>%</span></span>
+      </div>
+      <div className="h-2 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.03)" }}>
+        <div className="h-full rounded-full" style={{
+          width: `${Math.min(pct, 100)}%`,
+          background: `linear-gradient(90deg, ${color}60, ${color})`,
+          boxShadow: `0 0 8px ${color}25`,
+          transition: "width 0.6s ease",
+        }} />
       </div>
     </div>
   );
 };
 
-const StatCard: React.FC<{ label: string; value: string; color: string }> = ({ label, value, color }) => (
-  <div
-    className="rounded-lg px-2 py-1.5"
-    style={{ background: C.card, border: `1px solid ${C.border}` }}
-  >
-    <div className="text-[9px] uppercase tracking-wide" style={{ color: C.mute }}>{label}</div>
-    <div className="text-[11px] font-bold font-mono truncate" style={{ color }}>{value}</div>
-  </div>
-);
+/* Storage — half-width gauge card */
+const StorageCard: React.FC<{ used: number; limit: number }> = ({ used, limit }) => {
+  const pct = limit > 0 ? (used / limit) * 100 : 0;
+  const color = pct > 85 ? C.red : pct > 60 ? C.yellow : C.blue;
+  const label = limit > 999 ? "1GB" : `${limit}MB`;
+  return (
+    <div className="rounded-xl px-3 py-3 flex flex-col items-center justify-between h-full gap-2"
+      style={{ background: `linear-gradient(180deg, ${color}05, ${C.card})`, border: `1px solid ${color}15` }}>
+      <div className="flex items-center gap-2 w-full">
+        <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: `${color}10` }}>
+          <HardDrive size={14} style={{ color }} />
+        </div>
+        <span className="text-[9px] uppercase tracking-[0.12em] font-bold" style={{ color: C.mute }}>Storage</span>
+      </div>
+      <RingGauge pct={pct} color={color} size={60} stroke={4}>
+        <span className="text-[13px] font-black font-mono" style={{ color }}>{Math.round(pct)}<span className="text-[9px]" style={{ color: C.mute }}>%</span></span>
+      </RingGauge>
+      <div className="text-[11px] font-mono" style={{ color: C.dim }}>{used.toFixed(1)}<span style={{ color: C.mute }}>/{label}</span></div>
+    </div>
+  );
+};
+
+/* Restarts — half-width big number card */
+const RestartCard: React.FC<{ count: number }> = ({ count }) => {
+  const color = count > 5 ? C.red : count > 2 ? C.yellow : C.green;
+  const label = count === 0 ? "Stable" : count <= 2 ? "Normal" : "Check logs";
+  return (
+    <div className="rounded-xl px-3 py-3 flex flex-col items-center justify-between h-full gap-2"
+      style={{ background: `linear-gradient(180deg, ${color}05, ${C.card})`, border: `1px solid ${color}15` }}>
+      <div className="flex items-center gap-2 w-full">
+        <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ background: `${color}10` }}>
+          <RotateCcw size={14} style={{ color }} />
+        </div>
+        <span className="text-[9px] uppercase tracking-[0.12em] font-bold" style={{ color: C.mute }}>Restarts</span>
+      </div>
+      <span className="text-[32px] font-black font-mono leading-none" style={{ color }}>{count}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="relative flex h-2 w-2">
+          {count === 0 && <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50" style={{ background: color }} />}
+          <span className="relative inline-flex rounded-full h-2 w-2" style={{ background: color }} />
+        </span>
+        <span className="text-[10px] font-medium" style={{ color: C.dim }}>{label}</span>
+      </div>
+    </div>
+  );
+};
 
 /* ════════════════════ FILES TAB ════════════════════ */
 const FilesTab: React.FC<{ botId: string; runtime?: string | null }> = ({ botId, runtime }) => {
@@ -696,14 +933,17 @@ const CodeEditor: React.FC<{
 
   // autosave (debounced)
   const saveTimer = useRef<number | null>(null);
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+
   const triggerAutosave = useCallback(() => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       const content = viewRef.current?.state.doc.toString() ?? "";
-      try { setSaving(true); await onSave(content); setSavedAt(Date.now()); }
+      try { setSaving(true); await onSaveRef.current(content); setSavedAt(Date.now()); }
       finally { setSaving(false); }
     }, 800);
-  }, [onSave]);
+  }, []);
 
   useEffect(() => {
     if (!wrapRef.current) return;
@@ -727,7 +967,8 @@ const CodeEditor: React.FC<{
     const view = new EditorView({ state, parent: wrapRef.current });
     viewRef.current = view;
     return () => { view.destroy(); viewRef.current = null; };
-  }, [initial, langExt, triggerAutosave]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path]);
 
   const manualSave = async () => {
     const content = viewRef.current?.state.doc.toString() ?? "";
@@ -755,8 +996,8 @@ const CodeEditor: React.FC<{
         </button>
         <button
           onClick={manualSave}
-          className="flex items-center gap-1 h-7 px-2 rounded-md text-[10px] font-bold text-white"
-          style={{ background: C.accent }}
+          className="flex items-center gap-1 h-7 px-2 rounded-md text-[10px] font-bold"
+          style={{ background: savedAt && !saving ? C.dim : C.accent, color: savedAt && !saving ? C.bg : "white" }}
         >
           {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
           {savedAt && !saving ? "Saved" : "Save"}
@@ -774,25 +1015,37 @@ const StartupTab: React.FC<{ botId: string; bot: any }> = ({ botId, bot }) => {
   const [showSuggest, setShowSuggest] = useState(false);
   const t = useToast();
   const qc = useQueryClient();
+  const runtime = bot?.runtime ?? "nodejs";
+  const isNode = runtime === "nodejs";
+  const validExts = isNode ? [".js", ".mjs", ".cjs"] : [".py"];
 
   useEffect(() => {
-    const initial = bot?.startFile ?? (bot?.runtime === "python" ? "main.py" : "index.js");
+    const initial = bot?.startFile ?? (isNode ? "index.js" : "main.py");
     setVal(initial);
-  }, [bot?.startFile, bot?.runtime]);
+  }, [bot?.startFile, bot?.runtime, isNode]);
 
   useEffect(() => {
     (async () => {
       try {
         const r = await api.get(`/bots/${botId}/files`, { params: { path: "/" } });
-        setAllFiles((r.data as FileEntry[]).filter((f) => !f.isDir).map((f) => f.name));
+        const files = (r.data as FileEntry[])
+          .filter((f) => !f.isDir)
+          .map((f) => f.name)
+          .filter((n) => validExts.some((ext) => n.endsWith(ext)));
+        setAllFiles(files);
       } catch {}
     })();
-  }, [botId]);
+  }, [botId, runtime]);
 
-  const presets = ["app.js", "index.js", "server.js", "bot.js", "main.js", "main.py"];
+  const presets = isNode ? ["index.js", "app.js", "server.js", "bot.js", "main.js"] : ["main.py", "app.py", "bot.py", "run.py"];
 
   const save = async () => {
     if (!val.trim()) return;
+    const ext = "." + (val.trim().split(".").pop() ?? "");
+    if (!validExts.includes(ext)) {
+      t.error(isNode ? "Must be a .js, .mjs, or .cjs file" : "Must be a .py file");
+      return;
+    }
     try {
       await api.patch(`/bots/${botId}`, { startFile: val.trim() });
       qc.invalidateQueries({ queryKey: ["bot", botId] });
@@ -925,7 +1178,7 @@ const ConfigTab: React.FC<{ bot: any }> = ({ bot }) => {
       </div>
 
       <div
-        className="rounded-lg p-3 mt-auto"
+        className="rounded-lg p-3 mt-2"
         style={{ border: `1px solid rgba(239,68,68,0.4)`, background: "rgba(239,68,68,0.05)" }}
       >
         <div className="flex items-center gap-1.5 mb-1">
@@ -967,6 +1220,97 @@ const ConfigTab: React.FC<{ bot: any }> = ({ bot }) => {
             >
               {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
               Delete
+            </button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+/* ════════════════════ LOGS TAB ════════════════════ */
+const LogsTab: React.FC<{ botId: string; bot: any }> = ({ botId, bot }) => {
+  const [errorLogs, setErrorLogs] = useState<LogLine[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const onLog = (l: LogLine) => {
+      if (l.isStderr || /error|fail|exception|traceback/i.test(l.text)) {
+        setErrorLogs((p) => [...p.slice(-199), l]);
+      }
+    };
+
+    const doSubscribe = () => {
+      socket.on("console-log", onLog);
+      socket.emit("logs:subscribe", { botId });
+    };
+
+    if (socket.connected) {
+      doSubscribe();
+    } else {
+      socket.connect();
+      socket.once("connect", doSubscribe);
+    }
+
+    return () => {
+      socket.off("console-log", onLog);
+    };
+  }, [botId]);
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="flex flex-col h-full p-2 gap-2">
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={() => setErrorLogs([])} className="h-7 w-7 rounded-md flex items-center justify-center"
+          style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${C.border}` }}>
+          <Eraser size={12} style={{ color: C.dim }} />
+        </button>
+        <span className="text-[10px] font-mono ml-auto" style={{ color: C.mute }}>{errorLogs.length} errors</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg p-2.5 font-mono text-[11px] leading-relaxed"
+        style={{ background: C.console, border: `1px solid ${C.border}`, fontFamily: "'JetBrains Mono', monospace" }}>
+        {errorLogs.length === 0 ? (
+          <div style={{ color: C.mute }} className="text-center pt-4 text-[11px]">
+            No errors yet
+          </div>
+        ) : errorLogs.map((l, i) => (
+          <div key={i}
+            className="flex items-start gap-2 py-0.5 cursor-pointer hover:bg-white/[0.02] rounded px-1 -mx-1 group"
+            onClick={() => setSelected(l.text)}>
+            <div className="flex-1 min-w-0">
+              <div style={{ color: colorize(l) }} className="whitespace-pre-wrap break-words truncate">
+                {l.text.split("\n")[0]}
+              </div>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); copy(l.text); }}
+              className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-white/5 shrink-0"
+              title="Copy">
+              <Copy size={11} style={{ color: C.mute }} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {selected && (
+        <Modal title="Error Details" onClose={() => setSelected(null)}>
+          <div className="relative">
+            <pre className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words p-3 rounded-lg max-h-80 overflow-y-auto"
+              style={{ background: C.console, border: `1px solid ${C.border}`, fontFamily: "'JetBrains Mono', monospace", color: C.red }}>
+              {selected}
+            </pre>
+            <button
+              onClick={() => copy(selected)}
+              className="absolute top-2 right-2 p-1.5 rounded-md hover:bg-white/10"
+              style={{ background: "rgba(0,0,0,0.4)" }}>
+              {copied ? <Check size={14} style={{ color: C.green }} /> : <Copy size={14} style={{ color: C.dim }} />}
             </button>
           </div>
         </Modal>

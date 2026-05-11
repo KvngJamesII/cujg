@@ -64,11 +64,13 @@ router.post("/", requireAuth, async (req, res) => {
     id:     botId,
     userId: req.userId!,
     name:   name.trim(),
+    runtime: runtime ?? null,
     status: "not_created",
     ...(plan ? { plan } as any : {}),
   });
 
   await auditLog("bot.created", { userId: req.userId, req, metadata: { botId, name, plan: plan ?? "basic" } });
+
   const [bot] = await db.select().from(botsTable).where(eq(botsTable.id, botId)).limit(1);
   res.status(201).json(formatBot(bot));
 });
@@ -91,7 +93,20 @@ router.patch("/:id", requireAuth, async (req, res) => {
   const { name, startFile, plan, runtime } = req.body as { name?: string; startFile?: string; plan?: string; runtime?: "nodejs" | "python" };
   const updates: Record<string,any> = { updatedAt: new Date() };
   if (name)      updates.name      = name.trim();
-  if (startFile) updates.startFile = startFile.trim();
+  if (startFile) {
+    const sf = startFile.trim();
+    const botRuntime = runtime ?? bot.runtime;
+    const ext = sf.includes(".") ? "." + sf.split(".").pop() : "";
+    const validNode = [".js", ".mjs", ".cjs"];
+    const validPy = [".py"];
+    if (botRuntime === "python" && !validPy.includes(ext)) {
+      res.status(400).json({ error: "Python panels require a .py startup file" }); return;
+    }
+    if (botRuntime === "nodejs" && !validNode.includes(ext)) {
+      res.status(400).json({ error: "Node.js panels require a .js, .mjs, or .cjs startup file" }); return;
+    }
+    updates.startFile = sf;
+  }
   if (plan && ["basic","pro"].includes(plan)) updates.plan = plan;
   if (runtime && ["nodejs","python"].includes(runtime)) {
     updates.runtime = runtime;
@@ -136,8 +151,15 @@ router.post("/:id/start", requireAuth, async (req, res) => {
   const envMap  = Object.fromEntries(envVars.map((e) => [e.key, decryptValue(e.valueEncrypted)]));
   const plan    = (bot as any).plan ?? "basic";
 
-  await db.update(botsTable).set({ status: "running", updatedAt: new Date() }).where(eq(botsTable.id, bot.id));
-  await createAndStartContainer(req.userId!, bot.id, bot.runtime, bot.startFile, envMap, plan);
+  await db.update(botsTable).set({ status: "setting_up", updatedAt: new Date() }).where(eq(botsTable.id, bot.id));
+  try {
+    await createAndStartContainer(req.userId!, bot.id, bot.runtime, bot.startFile, envMap, plan);
+    await db.update(botsTable).set({ status: "running", updatedAt: new Date() }).where(eq(botsTable.id, bot.id));
+  } catch (e: any) {
+    await db.update(botsTable).set({ status: "crashed", lastError: e?.message ?? "Container start failed", updatedAt: new Date() }).where(eq(botsTable.id, bot.id));
+    res.status(500).json({ error: e?.message ?? "Container failed to start" });
+    return;
+  }
   await auditLog("bot.started", { userId: req.userId, req, metadata: { botId: bot.id } });
   res.json({ message: "Bot started" });
 });
